@@ -9,31 +9,38 @@ class BackgroundAlertService:
         self.worker_thread.start()
 
     def _worker_loop(self):
-        import pyttsx3
         import platform
-        if platform.system() == "Windows":
+        is_windows = platform.system() == "Windows"
+        
+        engine = None
+        if is_windows:
             try:
                 import pythoncom
-                pythoncom.CoInitialize() # Explicit COM initialization for Windows threads
-            except ImportError:
-                pass
-                
-        try:
-            self.engine = pyttsx3.init()
-            self.engine.setProperty('rate', 150)
-        except Exception as e:
-            print(f"Error initializing TTS: {e}")
-            self.engine = None
-            return
+                import win32com.client
+                pythoncom.CoInitialize()
+                engine = win32com.client.Dispatch("SAPI.SpVoice")
+                # Optional: engine.Rate = 2  # SAPI rate is -10 to 10
+            except Exception as e:
+                print(f"Windows TTS Error: {e}")
+        else:
+            try:
+                import pyttsx3
+                engine = pyttsx3.init()
+                engine.setProperty('rate', 150)
+            except Exception as e:
+                print(f"Linux/Mac TTS Error: {e}")
 
         while True:
             message = self.queue.get()
             if message == "__STOP__":
                 break
-            if message and self.engine:
+            if message and engine:
                 try:
-                    self.engine.say(message)
-                    self.engine.runAndWait()
+                    if is_windows:
+                        engine.Speak(message)
+                    else:
+                        engine.say(message)
+                        engine.runAndWait()
                 except Exception as e:
                     print(f"TTS Error: {e}")
             self.queue.task_done()
