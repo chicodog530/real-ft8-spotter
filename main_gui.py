@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-                               QTableWidgetItem, QHeaderView, QSystemTrayIcon, QMenu, QFileDialog, QLineEdit, QComboBox, QCheckBox, QDialog)
+                               QTableWidgetItem, QHeaderView, QSystemTrayIcon, QMenu, QFileDialog, QLineEdit, QComboBox, QCheckBox, QDialog, QSlider)
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
@@ -121,13 +121,17 @@ class MainWindow(QMainWindow):
         self.exclude_cb.setChecked(True)
         settings_layout.addWidget(self.exclude_cb)
         
-        radius_label = QLabel("   Nearby Radius (miles):")
-        settings_layout.addWidget(radius_label)
+        self.radius_label = QLabel("   Nearby Radius: 100 miles")
+        settings_layout.addWidget(self.radius_label)
         
-        self.radius_combo = QComboBox()
-        self.radius_combo.addItems(["25", "50", "100", "200", "300", "500"])
-        self.radius_combo.setCurrentText("100")  # Default to 100 miles
-        settings_layout.addWidget(self.radius_combo)
+        self.radius_slider = QSlider(Qt.Horizontal)
+        self.radius_slider.setMinimum(25)
+        self.radius_slider.setMaximum(500)
+        self.radius_slider.setSingleStep(5)
+        self.radius_slider.setTickInterval(25)
+        self.radius_slider.setValue(100)
+        self.radius_slider.setMaximumWidth(150)
+        settings_layout.addWidget(self.radius_slider)
         
         cooldown_label = QLabel("   Alert Cooldown:")
         settings_layout.addWidget(cooldown_label)
@@ -172,7 +176,7 @@ class MainWindow(QMainWindow):
         self.last_batch_alert_time = 0
         
         # Connect inputs to update worker filters dynamically
-        self.radius_combo.currentTextChanged.connect(self.update_filters)
+        self.radius_slider.valueChanged.connect(self.on_radius_changed)
         self.exclude_cb.toggled.connect(self.update_filters)
         self.callsign_input.textChanged.connect(self.update_filters)
         self.grid_input.textChanged.connect(self.update_filters)
@@ -254,10 +258,20 @@ class MainWindow(QMainWindow):
             self.last_batch_alert_time = 0
             self.status_label.setText(f"Alert mode changed to {text.replace('Voice Alerts: ', '')}.")
 
+    def on_radius_changed(self, value):
+        # Snap to 5-mile increments
+        snapped_value = round(value / 5) * 5
+        if self.radius_slider.value() != snapped_value:
+            self.radius_slider.setValue(snapped_value)
+            return
+            
+        self.radius_label.setText(f"   Nearby Radius: {snapped_value} miles")
+        self.update_filters()
+
     def update_filters(self):
         if self.worker:
             self.worker.exclude_callsign = self.callsign_input.text().upper() if self.exclude_cb.isChecked() else ""
-            self.worker.radius = int(self.radius_combo.currentText())
+            self.worker.radius = self.radius_slider.value()
             self.worker.my_callsign = self.callsign_input.text().upper()
             
             # Update Country Filters
