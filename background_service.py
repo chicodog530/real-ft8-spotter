@@ -3,13 +3,21 @@ import threading
 
 class BackgroundAlertService:
     def __init__(self):
-        self.queue = queue.Queue()
+        self.queue = queue.Queue(maxsize=15) # Protect against TTS freezing
         self.worker_thread = threading.Thread(target=self._worker_loop)
         self.worker_thread.daemon = True
         self.worker_thread.start()
 
     def _worker_loop(self):
         import pyttsx3
+        import platform
+        if platform.system() == "Windows":
+            try:
+                import pythoncom
+                pythoncom.CoInitialize() # Explicit COM initialization for Windows threads
+            except ImportError:
+                pass
+                
         try:
             self.engine = pyttsx3.init()
             self.engine.setProperty('rate', 150)
@@ -32,8 +40,11 @@ class BackgroundAlertService:
 
     def announce(self, message):
         """Adds a message to the voice queue."""
-        print(f"[VOICE ALERT]: {message}")
-        self.queue.put(message)
+        try:
+            self.queue.put(message, block=False)
+            print(f"[VOICE ALERT]: {message}")
+        except queue.Full:
+            print(f"[VOICE ALERT DROPPED - QUEUE FULL]: {message}")
 
     def clear(self):
         """Clears the queue of any pending announcements."""
