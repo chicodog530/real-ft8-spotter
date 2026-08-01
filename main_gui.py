@@ -162,6 +162,30 @@ class MainWindow(QMainWindow):
         self.status_label.setObjectName("status")
         main_layout.addWidget(self.status_label)
         
+        # We start the map centered roughly in the US with dark mode.
+        # We also create a LayerGroup for markers so we can easily clear them.
+        self.map_html = """
+        <!DOCTYPE html><html><head>
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <style> body { margin:0; padding:0; background-color:#151c24; } #map { width:100%; height:100vh; } </style>
+        </head><body><div id="map"></div><script>
+            var map = L.map('map').setView([37.6, -94.0], 3);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+            var markerGroup = L.layerGroup().addTo(map);
+            
+            // Expose a global function to update markers
+            window.updateMarkers = function(js_code) {
+                markerGroup.clearLayers();
+                eval(js_code); // Execute the Python-generated marker script inside the group
+            };
+        </script></body></html>
+        """
+        
+        if WEB_ENGINE_AVAILABLE:
+            self.map_view.setHtml(self.map_html)
+            self.map_view.page().renderProcessTerminated.connect(self.on_render_process_terminated)
+        
         # Start MQTT Stream
         self.start_stream()
 
@@ -213,26 +237,10 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Import Error", f"Failed to import ADIF:\n{e}")
                 self.status_label.setText("Import Failed.")
-        # We start the map centered roughly in the US with dark mode.
-        # We also create a LayerGroup for markers so we can easily clear them.
-        map_html = """
-        <!DOCTYPE html><html><head>
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <style> body { margin:0; padding:0; background-color:#151c24; } #map { width:100%; height:100vh; } </style>
-        </head><body><div id="map"></div><script>
-            var map = L.map('map').setView([37.6, -94.0], 3);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
-            var markerGroup = L.layerGroup().addTo(map);
-            
-            // Expose a global function to update markers
-            window.updateMarkers = function(js_code) {
-                markerGroup.clearLayers();
-                eval(js_code); // Execute the Python-generated marker script inside the group
-            };
-        </script></body></html>
-        """
-        self.map_view.setHtml(map_html)
+
+    def on_render_process_terminated(self, termination_status, exit_code):
+        print(f"WebEngine render process crashed ({termination_status}). Reloading map...")
+        self.map_view.setHtml(self.map_html)
 
     def initialize_map(self):
         pass
