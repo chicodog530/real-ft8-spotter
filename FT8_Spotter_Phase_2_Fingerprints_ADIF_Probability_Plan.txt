@@ -1,0 +1,792 @@
+FT8 LOCAL DX SPOTTER
+PHASE 2: RECEIVER FINGERPRINTS, ADIF INTEGRATION, AND PERSONALIZED PROBABILITY ENGINE
+
+Implementation brief for Google Antigravity
+Prepared August 2026
+
+======================================================================
+1. CURRENT PROJECT STATE
+======================================================================
+
+The first phase is already working. The desktop application retrieves current
+FT8 reception information and examines receiving stations within a configurable
+radius of the user. It then looks at the distant stations those nearby receivers
+are hearing and calculates a score representing the user's likely opportunity
+to hear or work those stations.
+
+Do not rebuild or replace the working first-phase data retrieval and user
+interface. Extend the existing application carefully and preserve all working
+features.
+
+This phase adds:
+
+1. Persistent historical receiver fingerprints.
+2. Incremental ADIF logbook integration.
+3. Worked and confirmed indexes for calls, DXCC entities, countries, grids,
+   states, counties, zones, bands, and modes.
+4. A personalized reception-likelihood model that learns which nearby
+   receivers best predict the user's own reception.
+5. Separate Hear Likelihood, Work Likelihood, Need Value, and Opportunity
+   Priority values.
+6. Storage of prediction outcomes so the likelihood model can be calibrated
+   over time.
+
+The main product question remains:
+
+“What FT8 stations are being heard right now by stations near me that I have a
+realistic chance of hearing or working, and which of those stations provide
+something I still need?”
+
+======================================================================
+2. NON-NEGOTIABLE DESIGN RULES
+======================================================================
+
+- Keep all existing working functionality.
+- Use SQLite as the application's persistent internal database.
+- Closing or restarting the application must not erase learned receiver data.
+- Do not rescan the complete ADIF file every time the application starts.
+- Import the complete ADIF file once, then normally import only appended bytes.
+- Detect ADIF files that were truncated, replaced, or rewritten and recover
+  safely without duplicating QSOs.
+- Treat the ADIF file as an import source. Runtime lookups must use SQLite
+  indexes, not repeatedly search the source file.
+- Keep propagation likelihood separate from logbook need or rarity.
+- A needed country must not receive an artificially high propagation score
+  merely because it is valuable.
+- Do not call a score a percentage probability until it has been calibrated
+  against actual observed outcomes.
+- Explain every score in plain language.
+- Missing data must reduce confidence rather than cause invented values.
+- The app must never automatically transmit.
+- Make schema changes through numbered database migrations.
+- Back up the database before any destructive migration or full rebuild.
+
+======================================================================
+3. THE FOUR VALUES TO DISPLAY
+======================================================================
+
+Calculate and display these separately:
+
+A. HEAR LIKELIHOOD
+   The likelihood that the user's station can decode the target during the next
+   configurable period, initially 10 minutes.
+
+B. WORK LIKELIHOOD
+   The likelihood of completing a QSO if the user attempts it. This may be
+   unknown until the user's own WSJT-X instance has decoded the station.
+
+C. NEED VALUE
+   The value of the contact to the user's logbook, based on worked or confirmed
+   status and the user's selected award dimensions.
+
+D. OPPORTUNITY PRIORITY
+   A ranking value used to decide what appears first and what deserves a voice
+   alert. It combines likelihood, need value, confidence, and time urgency.
+
+Suggested conceptual relationship:
+
+Opportunity Priority = Hear Likelihood × Work Likelihood × Need Value × Urgency
+
+Do not hide the individual values behind this combined ranking.
+
+Until properly calibrated, label the first two values “Likelihood Score 0–100”
+and also display Low, Medium, or High evidence confidence. Only display “78%
+chance” after outcome testing shows that the model is genuinely calibrated.
+
+======================================================================
+4. PERSISTENT RECEIVER FINGERPRINTS
+======================================================================
+
+Build and retain a historical fingerprint for every receiving station found in
+the PSK Reporter data.
+
+A receiver should not be identified solely by callsign. Use a stable receiver
+record plus location/equipment epochs. A practical identity is:
+
+Receiver callsign + receiver locator/location epoch
+
+If a receiver moves a substantial distance, reports a materially different
+locator, begins using a remote receiver, or changes its apparent operating
+characteristics, retain the old history and start a new epoch.
+
+For every receiver, accumulate:
+
+- Callsign.
+- Current and previous locators.
+- Approximate latitude and longitude.
+- First seen and last seen timestamps.
+- Active days and monitored hours.
+- Reporting software and version when available.
+- Antenna description when available, clearly marked as unverified free text.
+- Total reports.
+- Unique transmitters heard.
+- Reports by band.
+- Reports by UTC hour and local solar time.
+- Reports by day/night condition.
+- Reports by target distance range.
+- Reports by DXCC entity, continent, and region.
+- Reports by target azimuth sector.
+- Median, percentile, strongest, and weakest SNR by band.
+- Multi-cycle persistence statistics.
+- Historical agreement with other nearby receivers.
+- Historical agreement with the user's own WSJT-X decodes.
+- Median SNR difference from the user on common decodes.
+- Historical prediction successes and failures.
+- Recent, 30-day, 90-day, and lifetime performance.
+- Evidence sample count.
+- Receiver reliability score.
+- Evidence confidence.
+- Suspected remote receiver, bad locator, duplicate instance, or SDR-farm flags.
+
+The most valuable learned measurement is:
+
+P(user decodes target | this receiver reports target)
+
+Where sufficient data exists, learn this separately by:
+
+- Band.
+- Target azimuth sector.
+- Day versus night.
+- Target distance class.
+- Optionally season.
+
+Do not allow a receiver with only a few matching observations to receive an
+extreme reliability score. Use Bayesian shrinkage or another conservative
+method that pulls low-sample estimates toward the general receiver average.
+
+Display reliability and evidence confidence separately. Example:
+
+Receiver W0ABC
+Similarity: 87/100
+Confidence: High
+History: 142 monitored hours
+Common decodes: 4,218
+
+======================================================================
+5. HISTORY RETENTION
+======================================================================
+
+The application must retain long-term knowledge across days, months, and years.
+However, do not store every repetitive raw FT8 report forever without a storage
+plan.
+
+Use three levels:
+
+1. Raw PSK Reporter spots: configurable retention, default 60 days.
+2. Hourly and daily aggregated receiver statistics: retain permanently.
+3. Receiver fingerprints and learned model data: retain permanently.
+
+Before pruning raw reports, update all permanent aggregate tables in a single
+transaction. Pruning raw data must never erase the accumulated fingerprint.
+
+Suggested aggregate dimensions:
+
+- Receiver epoch.
+- Date.
+- UTC hour block.
+- Band.
+- Azimuth sector.
+- DX region.
+- Day/night state.
+- Unique transmitter count.
+- Report count.
+- Median and percentile SNR.
+- Strongest and weakest SNR.
+- User-overlap count.
+- User-decode count.
+
+Provide database maintenance that runs during idle time. Do not freeze the user
+interface while aggregating or pruning.
+
+======================================================================
+6. RECEIVER CHANGE DETECTION
+======================================================================
+
+Track lifetime and recent behavior separately. Detect possible changes in:
+
+- Locator or geographic position.
+- Antenna description.
+- Reporting software.
+- Normal report volume.
+- SNR distribution.
+- Bands monitored.
+- Directional performance.
+- Long periods of inactivity.
+- User overlap and prediction accuracy.
+
+When a material change is detected, create a new receiver epoch or temporarily
+reduce confidence. Do not delete older history.
+
+Initial recency blend to test:
+
+- 50 percent: last 7 days.
+- 25 percent: last 30 days.
+- 15 percent: last 90 days.
+- 10 percent: lifetime history.
+
+Keep these weights configurable internally and record the scoring version used.
+
+======================================================================
+7. ADIF IMPORT REQUIREMENTS
+======================================================================
+
+The user must be able to:
+
+- Select an ADIF file manually.
+- Optionally locate the normal WSJT-X ADIF file automatically.
+- Perform the initial complete import once.
+- See the imported QSO count, skipped count, duplicate count, warnings, and
+  last successful import time.
+- Enable automatic incremental monitoring.
+- Request a manual full reconcile when necessary.
+- Change to a different ADIF source without silently mixing or deleting data.
+
+Parse ADIF according to field length definitions, not line layout. Field names
+are case-insensitive. Preserve unknown fields where practical or ignore them
+safely. An ADIF record may span lines, and several records may appear on one
+line.
+
+Import at least these fields:
+
+CALL, QSO_DATE, TIME_ON, QSO_DATE_OFF, TIME_OFF, BAND, FREQ, MODE, SUBMODE,
+DXCC, COUNTRY, GRIDSQUARE, STATE, CNTY, CQZ, ITUZ, IOTA, STATION_CALLSIGN,
+MY_GRIDSQUARE, MY_STATE, MY_CNTY, QSL_RCVD, LOTW_QSL_RCVD, EQSL_QSL_RCVD,
+CREDIT_GRANTED, and CREDIT_SUBMITTED.
+
+Normalize:
+
+- Callsigns to uppercase while retaining the original.
+- MODE=MFSK with SUBMODE=FT8 to canonical FT8 for matching purposes.
+- Missing BAND from FREQ when possible.
+- DXCC from a current cty.dat resolver when DXCC is missing.
+- Grid values while retaining their original precision.
+- UTC dates and times.
+
+Do not treat worked and confirmed as the same condition.
+
+======================================================================
+8. INCREMENTAL ADIF IMPORT ALGORITHM
+======================================================================
+
+For each ADIF source save:
+
+- Canonical file path.
+- Platform file identity when obtainable.
+- Last known file size.
+- Last modified timestamp with the highest available precision.
+- Last safely parsed byte offset.
+- A small beginning-of-file hash.
+- A checkpoint hash near the saved byte offset.
+- Any incomplete trailing bytes after the last complete <EOR>.
+- Last successful import timestamp.
+- Imported record count.
+- Source status and last error.
+
+NORMAL APPEND CASE
+
+If the file identity is unchanged, the new size is larger, and the stored
+checkpoint still matches:
+
+1. Seek directly to the last safely parsed byte offset.
+2. Read only the newly appended bytes.
+3. Prepend any stored incomplete trailing bytes.
+4. Parse only complete records ending in <EOR>.
+5. Retain an incomplete final record for the next check.
+6. Insert new QSOs and update worked/confirmed indexes in one transaction.
+7. Advance the saved offset only through the last complete, committed record.
+
+UNCHANGED CASE
+
+If file identity, size, and timestamp are unchanged, do nothing. Do not parse
+the file again.
+
+TRUNCATED, REPLACED, OR REWRITTEN CASE
+
+If the file becomes smaller, file identity changes, the beginning hash changes,
+or the checkpoint no longer matches, assume the logging program rewrote or
+replaced the file.
+
+1. Parse the file into staging tables.
+2. Deduplicate it against existing QSOs.
+3. Reconcile additions and relevant changes.
+4. Commit the new source index transactionally.
+5. Leave the existing working database untouched if the rebuild fails.
+
+File size alone is not sufficient because a rewritten file could have the same
+or larger size while containing different records.
+
+======================================================================
+9. QSO DEDUPLICATION
+======================================================================
+
+Create a normalized QSO fingerprint. Suggested inputs:
+
+- Station callsign.
+- Contact callsign.
+- QSO start date and time.
+- Band or normalized frequency.
+- Canonical mode/submode.
+- Contact grid when present.
+
+Hash the normalized representation and place a unique database constraint on
+the result. This must prevent duplicates when:
+
+- The same ADIF file is imported twice.
+- A logging program rewrites its complete export.
+- A QSO arrives through both file monitoring and WSJT-X UDP Logged ADIF.
+- The user changes logging programs.
+- Records are reordered.
+
+Do not use ADIF line numbers as identities.
+
+======================================================================
+10. WORKED AND CONFIRMED INDEXES
+======================================================================
+
+Precompute fast SQLite indexes for:
+
+- Worked callsign.
+- Confirmed callsign.
+- Worked/confirmed DXCC entity.
+- Worked/confirmed country display name.
+- Worked/confirmed state or province.
+- Worked/confirmed county.
+- Worked/confirmed 2-character grid field.
+- Worked/confirmed 4-character grid square.
+- Worked/confirmed 6-character grid subsquare.
+- Worked/confirmed CQ zone.
+- Worked/confirmed ITU zone.
+- Worked/confirmed IOTA.
+- Each of the above overall, by band, by mode, and by band+mode where useful.
+
+Allow the user to define “needed” independently as:
+
+- Never worked.
+- Never confirmed.
+- Never worked on this band.
+- Never confirmed on this band.
+- Never worked in this mode.
+- Never confirmed in this mode.
+- Never worked or confirmed in this band+mode combination.
+
+Default grid alerts to four-character grid squares, but allow two-, six-, and
+eight-character tracking where data supports it.
+
+COUNTY ACCURACY RULE
+
+A callsign or coarse grid does not prove a county. Label live county enrichment:
+
+- Exact: supplied by ADIF, live exchange, or trusted lookup.
+- Probable: derived from a sufficiently precise grid.
+- Approximate: derived from a coarse grid.
+- Unknown.
+
+Never present an inferred county as guaranteed award credit.
+
+======================================================================
+11. LIVE WSJT-X INTEGRATION
+======================================================================
+
+Use WSJT-X UDP data, when enabled, to record:
+
+- Whether WSJT-X is running and monitoring.
+- Current band and frequency.
+- Local decodes and SNR.
+- Decoded callsigns and grids.
+- CQ versus directed messages when available.
+- Current target.
+- Transmit-enabled and transmitting states.
+- Logged QSO and Logged ADIF messages.
+
+This data provides ground truth for learning.
+
+Never mark a receiver prediction as failed simply because the user did not
+decode the target. A valid negative outcome requires:
+
+- The user was actually monitoring the predicted band.
+- WSJT-X was decoding normally.
+- Monitoring continued for the evaluation window.
+- Time synchronization and audio were healthy enough for valid decoding.
+
+Otherwise record the outcome as NOT OBSERVED, not FAILED.
+
+When the user's WSJT-X decodes a predicted target, change Hear Status to
+Confirmed. When the QSO is logged, update all logbook indexes immediately.
+
+======================================================================
+12. PERSONALIZED HEAR-LIKELIHOOD ENGINE
+======================================================================
+
+Initial transparent factor shares to test:
+
+- 25% trusted independent receiver consensus.
+- 20% historical receiver-to-user similarity.
+- 15% normalized SNR quality.
+- 12% recency and multi-cycle persistence.
+- 10% path and bearing similarity.
+- 8% regional and band opening strength.
+- 5% user's historical band/direction performance.
+- 3% daylight, gray-line, and space-weather context.
+- 2% receiver terrain and elevation.
+
+These are starting weights, not permanent truth. Store them in a versioned
+configuration and show the actual contributing evidence in the interface.
+
+RECEIVER CONSENSUS
+
+- Count independent receiver stations, not repeated reports.
+- Detect colocated or duplicate instances where possible.
+- Use a saturating curve so the second independent receiver adds more evidence
+  than the tenth.
+- Reduce the contribution of receivers with suspicious locators or behavior.
+
+DISTANCE AND PATH
+
+- Replace hard distance weighting with a smooth decay inside the selected
+  maximum radius.
+- Calculate user-to-target and receiver-to-target bearings.
+- Compare great-circle path similarity.
+- Consider whether the receiver lies along, behind, or perpendicular to the
+  user's path toward the target.
+- A slightly farther receiver with a matching path can be more useful than a
+  nearer receiver in the opposite direction.
+
+SIGNAL EVIDENCE
+
+- Use best, median, and percentile SNR.
+- Normalize SNR relative to each receiver's own historical distribution.
+- Count repeated FT8 cycles.
+- Measure persistence and time since last report.
+- Detect improving or declining signal and geographic coverage.
+- Consider whether other stations from the same region are appearing.
+
+USER STATION LEARNING
+
+Learn reception performance by band, target direction, distance, day/night,
+and time of day. User-entered radio, antenna, power, height, and directional
+information may establish an initial prior, but actual results should gradually
+become more important.
+
+======================================================================
+13. ELEVATION AND TERRAIN
+======================================================================
+
+Receiver elevation is only a small modifier. Elevation may improve the low-angle
+horizon, but it does not reveal antenna type, antenna height above ground,
+feed-line loss, receiver sensitivity, or local electrical noise.
+
+When accurate location data permits, store:
+
+- Receiver terrain elevation.
+- User terrain elevation.
+- Locator precision and resulting coordinate uncertainty.
+- Terrain obstruction toward the target azimuth.
+- Local terrain roughness.
+- Valley, flat, or exposed-site classification.
+
+Cap terrain/elevation influence near 2–5% until outcome data proves a different
+weight. Missing elevation must not prevent a receiver from being used.
+
+======================================================================
+14. WORK LIKELIHOOD
+======================================================================
+
+Hearing and completing a QSO are different predictions.
+
+Before a local decode, Work Likelihood may be Unknown or low-confidence. After
+a local decode, consider:
+
+- Local SNR and trend.
+- Whether the target is calling CQ.
+- Whether the target is answering other stations.
+- Target persistence.
+- User's transmit power and antenna profile for the band/direction.
+- Past QSO success under similar conditions.
+- Apparent pileup or competition.
+- Fox/Hound or other special operating mode.
+
+Track whether the user actually attempted the QSO. A displayed opportunity that
+the user ignored is not a failed work prediction.
+
+======================================================================
+15. NEED VALUE AND ALERTING
+======================================================================
+
+Need Value must not change Hear Likelihood. It changes ranking and alert urgency.
+
+Allow rules such as:
+
+- Alert on any new DXCC above Hear Likelihood 45.
+- Alert on a new band-DXCC above 55.
+- Alert on a needed state above 60.
+- Alert on a probable new county above 70.
+- Alert on a new four-character grid above 65.
+- Alert on general non-needed openings only above 80.
+- Voice alerts only for selected need categories.
+
+Example display:
+
+EA8ABC — Canary Islands — 17 meters
+Hear Likelihood: 84/100
+Work Likelihood: Unknown until locally decoded
+Need: New DXCC on 17m
+Evidence Confidence: High
+
+Why:
+- Heard by five trusted receivers within 93 miles.
+- Three receivers heard it during multiple FT8 cycles.
+- Two receivers historically match this user's reception closely.
+- Signal coverage is expanding.
+- Receiver-to-target paths closely match the user's path.
+
+Example voice alert:
+
+“Needed DX alert. Canary Islands is being heard on seventeen meters by four
+trusted receivers near you. Hear likelihood is high. This would be a new
+seventeen-meter DXCC.”
+
+Group related reports and enforce cooldowns so the app does not speak every spot.
+
+======================================================================
+16. SPACE WEATHER AND TIME-OF-DAY CONTEXT
+======================================================================
+
+Optional supporting factors:
+
+- Daylight or darkness at the user and target.
+- Percentage of the path in darkness.
+- Sunrise, sunset, and gray-line proximity.
+- Season and local solar time.
+- Geomagnetic or polar path.
+- Current Kp and recent Kp change.
+- Solar flux.
+- Solar X-ray blackout or D-region absorption data.
+
+Live reception reports already measure the current ionosphere. Do not give
+large weights to both live evidence and external propagation indexes, which
+would double-count the same condition. Add this after the receiver-fingerprint
+engine is working.
+
+======================================================================
+17. PREDICTION OUTCOME LOGGING AND CALIBRATION
+======================================================================
+
+Record each meaningful prediction with:
+
+- Timestamp and model version.
+- Target callsign, grid, DXCC, band, path, and distance.
+- Complete feature vector used.
+- Contributing receivers and their weights.
+- Hear and Work Likelihood scores.
+- Evidence confidence.
+- Whether the user monitored the band.
+- Whether the target was locally decoded within 5, 10, and 15 minutes.
+- Local SNR and trend.
+- Whether the user attempted a QSO.
+- Whether a QSO was logged.
+- Reason the result could not be evaluated.
+
+Begin with a transparent deterministic score. After enough valid observations,
+fit a simple, inspectable logistic-regression model for hear probability. Do not
+start with an opaque neural network.
+
+Evaluate:
+
+- Calibration by score bucket.
+- Brier score.
+- Precision and recall.
+- False-alert rate.
+- Missed-opportunity rate.
+- Results by band and direction.
+- Results by evidence-confidence level.
+
+Train and validate using different time periods to avoid testing on the same
+events used for learning. Preserve previous model versions and allow rollback.
+
+======================================================================
+18. SUGGESTED DATABASE AREAS
+======================================================================
+
+Use or adapt tables similar to:
+
+- schema_migrations
+- app_settings
+- adif_sources
+- adif_import_runs
+- qsos
+- qso_confirmations
+- worked_calls
+- worked_entities
+- worked_locations
+- receiver_stations
+- receiver_epochs
+- receiver_raw_spots
+- receiver_hourly_stats
+- receiver_daily_stats
+- receiver_band_stats
+- receiver_path_stats
+- receiver_user_overlap
+- local_wsjtx_decodes
+- monitoring_sessions
+- prediction_events
+- prediction_receivers
+- prediction_outcomes
+- model_versions
+- alert_rules
+- alert_history
+
+Add indexes for timestamps, receiver epoch, band, target callsign, DXCC, grid,
+and QSO fingerprint. Do not store duplicate derived strings in every table when
+normalized foreign keys are appropriate.
+
+======================================================================
+19. IMPLEMENTATION ORDER
+======================================================================
+
+MILESTONE 1 — SAFE DATABASE FOUNDATION
+
+- Add versioned schema migrations.
+- Add database backup and recovery.
+- Add receiver identity and epoch tables.
+- Add test fixtures before migrating real user data.
+
+MILESTONE 2 — ADIF ENGINE
+
+- Build standards-compliant length-aware ADIF parser.
+- Complete initial import.
+- Add QSO fingerprints and deduplication.
+- Build worked and confirmed indexes.
+- Add import summary and error reporting.
+
+MILESTONE 3 — INCREMENTAL ADIF MONITORING
+
+- Save file identity, size, offset, hashes, and trailing partial record.
+- Import append-only changes.
+- Detect rewrite, replacement, and truncation.
+- Reconcile rewritten files through staging tables.
+- Add WSJT-X Logged ADIF ingestion and verify deduplication.
+
+MILESTONE 4 — RECEIVER HISTORY
+
+- Persist every receiver and its current epoch.
+- Save raw reports for configurable short-term retention.
+- Build permanent hourly/daily/band/path aggregates.
+- Add receiver change detection.
+
+MILESTONE 5 — USER/RECEIVER SIMILARITY
+
+- Record valid WSJT-X monitoring sessions.
+- Match local decodes with receiver reports by target, band, and time window.
+- Calculate receiver overlap, SNR delta, reliability, and confidence.
+- Do not count time when the user was not monitoring.
+
+MILESTONE 6 — LIKELIHOOD ENGINE VERSION 2
+
+- Add independent consensus.
+- Add normalized SNR.
+- Add recency and persistence.
+- Add path and bearing similarity.
+- Add receiver fingerprints and user station history.
+- Add low-weight elevation/terrain support.
+- Produce a full plain-language explanation.
+
+MILESTONE 7 — NEED ENGINE AND ALERTS
+
+- Add configurable worked/confirmed definitions.
+- Add callsign, DXCC, state, county, grid, zone, band, and mode indexes.
+- Add Need Value and Opportunity Priority.
+- Add alert thresholds, grouping, cooldowns, and voice wording.
+
+MILESTONE 8 — CALIBRATION
+
+- Store predictions and valid outcomes.
+- Add model evaluation reports.
+- Fit a simple personal probability model after sufficient data exists.
+- Continue showing deterministic fallback scores when evidence is insufficient.
+
+======================================================================
+20. TEST REQUIREMENTS
+======================================================================
+
+Create automated tests for:
+
+- Mixed-case and multiline ADIF.
+- Several records on one line.
+- Unknown ADIF fields.
+- FT8 represented as MODE=FT8 and MODE=MFSK/SUBMODE=FT8.
+- Incomplete final ADIF record.
+- File growing normally.
+- File unchanged.
+- File truncated.
+- File replaced with a same-size file.
+- File rewritten and reordered.
+- Duplicate received through file and UDP.
+- Application crash during import.
+- Database migration rollback.
+- Receiver locator change and new epoch creation.
+- Receiver with very little evidence.
+- Colocated or duplicate receivers.
+- User not monitoring the predicted band.
+- Needed versus worked versus confirmed distinctions.
+- Grid precision and uncertain county classification.
+- Score explanation exactly matching the factors used.
+
+Use saved PSK Reporter and ADIF fixtures. Do not repeatedly call live services
+while testing parsing, history, database, scoring, or interface logic.
+
+======================================================================
+21. ACCEPTANCE CRITERIA
+======================================================================
+
+This phase is complete when:
+
+- Receiver history survives application restarts.
+- Receiver fingerprints improve continuously over time.
+- Recent and lifetime receiver performance are stored separately.
+- Raw data retention does not erase permanent learned statistics.
+- An ADIF file is fully parsed only for the initial import or a verified rewrite.
+- Normal subsequent imports read only appended data.
+- Partial writes cannot create corrupt or missing records.
+- Rewritten logs do not duplicate QSOs.
+- New WSJT-X logged QSOs update needed status immediately.
+- Worked and confirmed status can be queried instantly from SQLite.
+- Needed calls, DXCC entities, grids, states, and counties can be identified.
+- Uncertain county information is labeled honestly.
+- Hear Likelihood is separate from Need Value.
+- Work Likelihood does not treat ignored opportunities as failures.
+- Receiver similarity is learned only during valid user monitoring periods.
+- Every score has a clear explanation.
+- The existing first-phase app continues working.
+- The interface remains a normal information-dense desktop layout with normal
+  fonts, background/tray operation, and useful voice alerts.
+
+======================================================================
+22. DEVELOPMENT RULES FOR ANTIGRAVITY
+======================================================================
+
+1. Inspect and document the existing code and database before editing.
+2. Preserve the working PSK Reporter provider and current score until the new
+   engine passes comparison testing.
+3. Add one numbered migration at a time.
+4. Make a backup before altering existing user data.
+5. Implement and test the ADIF parser independently of the GUI.
+6. Prove normal append, partial-record, rewrite, and deduplication behavior with
+   fixtures before enabling automatic file watching.
+7. Never reimport the entire unchanged ADIF file on startup.
+8. Never label an unobserved prediction as a failure.
+9. Never mix Need Value into radio propagation likelihood.
+10. Never assign a high-confidence receiver score from a small sample.
+11. Keep receiver fingerprint calculations transparent and versioned.
+12. Use background workers for importing, aggregation, and model updates.
+13. Keep all UI updates on the proper UI thread.
+14. Log useful errors without exposing private logbook contents unnecessarily.
+15. Add a change log and update it after every completed milestone.
+16. Do not begin machine-learning calibration until deterministic history and
+    outcome recording have been verified.
+17. If blocked, describe the exact blocker and preserve the last working build.
+
+The distinguishing feature of this application is not basic worked-before
+highlighting. It is the combination of persistent local receiver knowledge,
+the user's actual station performance, current FT8 reception evidence, and the
+user's own logbook needs. Over time the program should learn which receiving
+stations most accurately predict what this particular user can hear and work.
