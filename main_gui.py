@@ -206,6 +206,9 @@ class MainWindow(QMainWindow):
         if text == "Voice Alerts: Off":
             self.alert_service.clear()
             self.status_label.setText("Voice alerts muted and queue cleared.")
+        else:
+            self.last_alert_times.clear()
+            self.status_label.setText(f"Alert mode changed to {text.replace('Voice Alerts: ', '')}.")
 
     def update_filters(self):
         if self.worker:
