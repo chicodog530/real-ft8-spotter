@@ -98,28 +98,31 @@ class MainWindow(QMainWindow):
         header_label.setObjectName("header")
         main_layout.addWidget(header_label)
         
-        # Settings Layout (Radius)
-        settings_layout = QHBoxLayout()
+        # Settings Container
+        settings_container = QVBoxLayout()
+        
+        # Row 1: Profile and Radius
+        settings_row1 = QHBoxLayout()
         
         from PySide6.QtWidgets import QComboBox, QLineEdit, QCheckBox
         
         # My Callsign
         callsign_label = QLabel("My Callsign:")
-        settings_layout.addWidget(callsign_label)
+        settings_row1.addWidget(callsign_label)
         self.callsign_input = QLineEdit("KE0CGB")
         self.callsign_input.setMaximumWidth(60)
-        settings_layout.addWidget(self.callsign_input)
+        settings_row1.addWidget(self.callsign_input)
         
         grid_label = QLabel("Grid:")
-        settings_layout.addWidget(grid_label)
+        settings_row1.addWidget(grid_label)
         self.grid_input = QLineEdit("EM27XO")
         self.grid_input.setMaximumWidth(60)
-        settings_layout.addWidget(self.grid_input)
+        settings_row1.addWidget(self.grid_input)
         
         # Exclude Checkbox
         self.exclude_cb = QCheckBox("Exclude My Callsign")
         self.exclude_cb.setChecked(True)
-        settings_layout.addWidget(self.exclude_cb)
+        settings_row1.addWidget(self.exclude_cb)
         
         radius_layout = QVBoxLayout()
         
@@ -137,10 +140,14 @@ class MainWindow(QMainWindow):
         self.radius_slider.setMaximumWidth(250)
         radius_layout.addWidget(self.radius_slider)
         
-        settings_layout.addLayout(radius_layout)
+        settings_row1.addLayout(radius_layout)
+        settings_row1.addStretch()
         
-        cooldown_label = QLabel("   Alert Cooldown:")
-        settings_layout.addWidget(cooldown_label)
+        # Row 2: Voice and Filters
+        settings_row2 = QHBoxLayout()
+        
+        cooldown_label = QLabel("Alert Cooldown:")
+        settings_row2.addWidget(cooldown_label)
         self.cooldown_combo = QComboBox()
         # 15s up to 5m in 30s increments
         self.cooldown_options = {
@@ -150,7 +157,7 @@ class MainWindow(QMainWindow):
         }
         self.cooldown_combo.addItems(list(self.cooldown_options.keys()))
         self.cooldown_combo.setCurrentText("5m 00s")
-        settings_layout.addWidget(self.cooldown_combo)
+        settings_row2.addWidget(self.cooldown_combo)
         
         self.pota_engine = PotaIntegration()
         self.pota_engine.start()
@@ -166,7 +173,7 @@ class MainWindow(QMainWindow):
         ])
         self.voice_combo.setCurrentText("Voice Alerts: Smart Priority")
         self.voice_combo.currentTextChanged.connect(self.on_voice_toggled)
-        settings_layout.addWidget(self.voice_combo)
+        settings_row2.addWidget(self.voice_combo)
         
         self.max_alerts_combo = QComboBox()
         self.max_alerts_combo.addItems([
@@ -177,7 +184,7 @@ class MainWindow(QMainWindow):
             "Max Alerts: Unlimited"
         ])
         self.max_alerts_combo.setCurrentText("Max Alerts: 5")
-        settings_layout.addWidget(self.max_alerts_combo)
+        settings_row2.addWidget(self.max_alerts_combo)
         
         self.last_batch_alert_time = 0
         
@@ -189,14 +196,17 @@ class MainWindow(QMainWindow):
         
         self.import_btn = QPushButton("Import ADIF")
         self.import_btn.clicked.connect(self.import_adif)
-        settings_layout.addWidget(self.import_btn)
+        settings_row2.addWidget(self.import_btn)
         
         self.adv_filter_btn = QPushButton("Advanced Filters")
         self.adv_filter_btn.clicked.connect(self.open_advanced_filters)
-        settings_layout.addWidget(self.adv_filter_btn)
+        settings_row2.addWidget(self.adv_filter_btn)
         
-        settings_layout.addStretch()
-        main_layout.addLayout(settings_layout)
+        settings_row2.addStretch()
+        
+        settings_container.addLayout(settings_row1)
+        settings_container.addLayout(settings_row2)
+        main_layout.addLayout(settings_container)
         
         # Summary Area
         self.summary_label = QLabel("100 miles: Good opening to Europe on 20m")
