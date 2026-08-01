@@ -132,6 +132,17 @@ class MainWindow(QMainWindow):
         self.voice_combo.currentTextChanged.connect(self.on_voice_toggled)
         settings_layout.addWidget(self.voice_combo)
         
+        self.max_alerts_combo = QComboBox()
+        self.max_alerts_combo.addItems([
+            "Max Alerts: 1",
+            "Max Alerts: 3",
+            "Max Alerts: 5",
+            "Max Alerts: 10",
+            "Max Alerts: Unlimited"
+        ])
+        self.max_alerts_combo.setCurrentText("Max Alerts: 5")
+        settings_layout.addWidget(self.max_alerts_combo)
+        
         # Connect inputs to update worker filters dynamically
         self.radius_combo.currentTextChanged.connect(self.update_filters)
         self.exclude_cb.toggled.connect(self.update_filters)
@@ -277,8 +288,19 @@ class MainWindow(QMainWindow):
         # Rebuild table
         self.table.setRowCount(0)
         
+        # Sort by priority descending so best stations are evaluated/spoken first
+        scored_dx.sort(key=lambda x: x.get('priority', 0), reverse=True)
+        
         # Limit rows to 100 for performance
         display_spots = scored_dx[:100]
+        
+        max_alerts_text = self.max_alerts_combo.currentText()
+        if "Unlimited" in max_alerts_text:
+            max_alerts = float('inf')
+        else:
+            max_alerts = int(max_alerts_text.split(": ")[1])
+            
+        alerts_sent_this_cycle = 0
         
         for idx, dx in enumerate(display_spots):
             self.table.insertRow(idx)
@@ -325,8 +347,10 @@ class MainWindow(QMainWindow):
                 dx_key = f"{dx['tx_call']}_{dx['band']}"
                 last_alert = self.last_alert_times.get(dx_key, 0)
                 if now - last_alert >= cooldown_secs:
-                    self.last_alert_times[dx_key] = now
-                    self.alert_service.announce(msg)
+                    if alerts_sent_this_cycle < max_alerts:
+                        self.last_alert_times[dx_key] = now
+                        self.alert_service.announce(msg)
+                        alerts_sent_this_cycle += 1
         
         # Update map without flashing
         if WEB_ENGINE_AVAILABLE:
