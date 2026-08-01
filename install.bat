@@ -13,7 +13,12 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 echo.
+echo Creating Virtual Environment...
+python -m venv venv
+
+echo.
 echo Upgrading pip...
+call venv\Scripts\activate
 python -m pip install --upgrade pip
 
 echo.
@@ -24,6 +29,6 @@ echo.
 echo ==============================================
 echo Installation Complete!
 echo You can now launch the application by running:
-echo python main_gui.py
+echo run.bat
 echo ==============================================
 pause
