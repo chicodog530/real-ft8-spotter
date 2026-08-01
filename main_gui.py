@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
         self.radius_slider = QSlider(Qt.Horizontal)
         self.radius_slider.setMinimum(25)
         self.radius_slider.setMaximum(500)
-        self.radius_slider.setSingleStep(5)
+        self.radius_slider.setSingleStep(25)
         self.radius_slider.setTickInterval(25)
         self.radius_slider.setValue(100)
         self.radius_slider.setMinimumWidth(150)
@@ -265,8 +265,8 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"Alert mode changed to {text.replace('Voice Alerts: ', '')}.")
 
     def on_radius_changed(self, value):
-        # Snap to 5-mile increments
-        snapped_value = round(value / 5) * 5
+        # Snap to 25-mile increments
+        snapped_value = round(value / 25) * 25
         if self.radius_slider.value() != snapped_value:
             self.radius_slider.setValue(snapped_value)
             return
