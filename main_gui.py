@@ -94,6 +94,7 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("YWD", "FT8Spotter")
         self.setup_ui()
         self.load_settings()
+        self.start_stream()
         self.apply_theme()
         self.setup_system_tray()
         
@@ -281,9 +282,34 @@ class MainWindow(QMainWindow):
             self.map_label.setStyleSheet("color: red; padding: 20px;")
             main_layout.addWidget(self.map_label)
             
+        # Status footer
         self.status_label = QLabel("Ready.")
         self.status_label.setObjectName("status")
         main_layout.addWidget(self.status_label)
+        
+        # We start the map centered roughly in the US with dark mode.
+        # We also create a LayerGroup for markers so we can easily clear them.
+        self.map_html = """
+        <!DOCTYPE html><html><head>
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <style> body { margin:0; padding:0; background-color:#151c24; } #map { width:100%; height:100vh; } </style>
+        </head><body><div id="map"></div><script>
+            var map = L.map('map').setView([37.6, -94.0], 3);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+            var markerGroup = L.layerGroup().addTo(map);
+            
+            // Expose a global function to update markers
+            window.updateMarkers = function(js_code) {
+                markerGroup.clearLayers();
+                eval(js_code); // Execute the Python-generated marker script inside the group
+            };
+        </script></body></html>
+        """
+        
+        if WEB_ENGINE_AVAILABLE:
+            self.map_view.setHtml(self.map_html)
+            self.map_view.page().renderProcessTerminated.connect(self.on_render_process_terminated)
 
     def save_settings(self):
         self.settings.setValue("callsign", self.callsign_input.text())
@@ -300,7 +326,6 @@ class MainWindow(QMainWindow):
         self.callsign_input.setText(self.settings.value("callsign", "KE0CGB"))
         self.grid_input.setText(self.settings.value("grid", "EM27XO"))
         
-        # PySide6 bool from QSettings requires specific handling or we just cast string
         exclude_val = str(self.settings.value("exclude_my_call", "true")).lower() == "true"
         self.exclude_cb.setChecked(exclude_val)
         
@@ -329,32 +354,69 @@ class MainWindow(QMainWindow):
         self.update_filters()
 
     def apply_theme(self):
-        # We start the map centered roughly in the US with dark mode.
-        # We also create a LayerGroup for markers so we can easily clear them.
-        self.map_html = """
-        <!DOCTYPE html><html><head>
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <style> body { margin:0; padding:0; background-color:#151c24; } #map { width:100%; height:100vh; } </style>
-        </head><body><div id="map"></div><script>
-            var map = L.map('map').setView([37.6, -94.0], 3);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
-            var markerGroup = L.layerGroup().addTo(map);
-            
-            // Expose a global function to update markers
-            window.updateMarkers = function(js_code) {
-                markerGroup.clearLayers();
-                eval(js_code); // Execute the Python-generated marker script inside the group
-            };
-        </script></body></html>
+        # Dark theme based on the user's provided screenshot
+        style = """
+        QMainWindow {
+            background-color: #0f151b;
+        }
+        QWidget {
+            background-color: #0f151b;
+            color: #a4b4c4;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 10pt;
+        }
+        QLabel#header {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #ffffff;
+            padding: 10px 0;
+        }
+        QLabel#summary {
+            color: #00d284;
+            font-weight: bold;
+        }
+        QTableWidget {
+            background-color: #151c24;
+            color: #ffffff;
+            gridline-color: #2b3a4a;
+            border: 1px solid #2b3a4a;
+        }
+        QHeaderView::section {
+            background-color: #1a232d;
+            color: #8a9ba8;
+            padding: 4px;
+            border: 1px solid #2b3a4a;
+            font-weight: bold;
+        }
+        QLabel#status {
+            color: #8a9ba8;
+            padding: 5px 0;
+        }
+        QLineEdit, QComboBox {
+            background-color: #1a232d;
+            border: 1px solid #2b3a4a;
+            color: #ffffff;
+            padding: 3px;
+        }
+        QCheckBox {
+            color: #a4b4c4;
+            spacing: 5px;
+        }
+        QCheckBox::indicator {
+            width: 13px;
+            height: 13px;
+        }
+        QPushButton {
+            background-color: #1a232d;
+            border: 1px solid #2b3a4a;
+            color: #ffffff;
+            padding: 4px 10px;
+        }
+        QPushButton:hover {
+            background-color: #2b3a4a;
+        }
         """
-        
-        if WEB_ENGINE_AVAILABLE:
-            self.map_view.setHtml(self.map_html)
-            self.map_view.page().renderProcessTerminated.connect(self.on_render_process_terminated)
-        
-        # Start MQTT Stream
-        self.start_stream()
+        self.setStyleSheet(style)
 
     def on_voice_toggled(self, text):
         if text == "Voice Alerts: Off":
