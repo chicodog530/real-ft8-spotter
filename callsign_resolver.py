@@ -50,15 +50,37 @@ class CallsignResolver:
         call_upper = callsign.upper()
         if call_upper.startswith('K') or call_upper.startswith('W') or call_upper.startswith('N') or call_upper.startswith('A'):
             info['country'] = 'United States'
-        elif call_upper.startswith('VE') or call_upper.startswith('VA'):
+        elif call_upper.startswith('VE') or call_upper.startswith('VA') or call_upper.startswith('VY'):
             info['country'] = 'Canada'
-        elif call_upper.startswith('M') or call_upper.startswith('G'):
+        elif call_upper.startswith('M') or call_upper.startswith('G') or call_upper.startswith('2E'):
             info['country'] = 'England'
         elif call_upper.startswith('VK'):
             info['country'] = 'Australia'
         elif call_upper.startswith('ZL'):
             info['country'] = 'New Zealand'
-        elif call_upper.startswith('JA') or call_upper.startswith('JH'):
+        elif call_upper.startswith('JA') or call_upper.startswith('JH') or call_upper.startswith('JR'):
             info['country'] = 'Japan'
+        elif call_upper.startswith('PY') or call_upper.startswith('PR') or call_upper.startswith('PP') or call_upper.startswith('PU'):
+            info['country'] = 'Brazil'
+        elif call_upper.startswith('LU') or call_upper.startswith('LW'):
+            info['country'] = 'Argentina'
+        elif call_upper.startswith('CE') or call_upper.startswith('CA'):
+            info['country'] = 'Chile'
+        elif call_upper.startswith('EA') or call_upper.startswith('EB') or call_upper.startswith('EC'):
+            info['country'] = 'Spain'
+        elif call_upper.startswith('I') or call_upper.startswith('IK') or call_upper.startswith('IZ'):
+            info['country'] = 'Italy'
+        elif call_upper.startswith('F') or call_upper.startswith('TM'):
+            info['country'] = 'France'
+        elif call_upper.startswith('D'):
+            info['country'] = 'Fed. Rep. of Germany'
+        elif call_upper.startswith('PA') or call_upper.startswith('PB') or call_upper.startswith('PD'):
+            info['country'] = 'Netherlands'
+        elif call_upper.startswith('ZS') or call_upper.startswith('ZR'):
+            info['country'] = 'South Africa'
+        elif call_upper.startswith('VU'):
+            info['country'] = 'India'
+        elif call_upper.startswith('XE'):
+            info['country'] = 'Mexico'
             
         return info
