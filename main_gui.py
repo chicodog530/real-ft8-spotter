@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
 from mqtt_worker import MqttWorker
 from background_service import BackgroundAlertService
+from pota_integration import PotaIntegration
 import time
 
 try:
@@ -115,10 +116,21 @@ class MainWindow(QMainWindow):
         self.cooldown_combo.setCurrentText("5m 00s")
         settings_layout.addWidget(self.cooldown_combo)
         
-        self.voice_cb = QCheckBox("Voice Alerts")
-        self.voice_cb.setChecked(True)
-        self.voice_cb.toggled.connect(self.on_voice_toggled)
-        settings_layout.addWidget(self.voice_cb)
+        self.pota_engine = PotaIntegration()
+        self.pota_engine.start()
+        
+        self.voice_combo = QComboBox()
+        self.voice_combo.addItems([
+            "Voice Alerts: Off",
+            "Voice Alerts: Smart Priority",
+            "Voice Alerts: Any Live POTA",
+            "Voice Alerts: Any New Country",
+            "Voice Alerts: Any New US State",
+            "Voice Alerts: All Live DX"
+        ])
+        self.voice_combo.setCurrentText("Voice Alerts: Smart Priority")
+        self.voice_combo.currentTextChanged.connect(self.on_voice_toggled)
+        settings_layout.addWidget(self.voice_combo)
         
         # Connect inputs to update worker filters dynamically
         self.radius_combo.currentTextChanged.connect(self.update_filters)
@@ -190,8 +202,8 @@ class MainWindow(QMainWindow):
         # Start MQTT Stream
         self.start_stream()
 
-    def on_voice_toggled(self, checked):
-        if not checked:
+    def on_voice_toggled(self, text):
+        if text == "Voice Alerts: Off":
             self.alert_service.clear()
             self.status_label.setText("Voice alerts muted and queue cleared.")
 
@@ -219,7 +231,7 @@ class MainWindow(QMainWindow):
         my_grid = self.grid_input.text().upper() or "EM27XO"
         
         self.status_label.setText("Starting MQTT Live Stream...")
-        self.worker = MqttWorker(my_call, my_grid, exclude, radius, min_dx=1000)
+        self.worker = MqttWorker(my_call, my_grid, exclude, radius, min_dx=1000, pota_engine=self.pota_engine)
         self.worker.data_ready.connect(self.on_data_ready)
         self.worker.status_update.connect(self.status_label.setText)
         self.worker.start()
@@ -287,12 +299,30 @@ class MainWindow(QMainWindow):
             self.table.setItem(idx, 7, QTableWidgetItem(f"{rx_count} rx"))
                 
             # Cooldown check for voice alert
-            if dx.get('priority', 0) >= 10 and self.voice_cb.isChecked():
+            voice_mode = self.voice_combo.currentText()
+            should_alert = False
+            
+            if voice_mode == "Voice Alerts: Smart Priority" and dx.get('priority', 0) >= 10:
+                should_alert = True
+                msg = f"Live DX Alert! {dx.get('rx_count', 0)} nearby stations are hearing {dx.get('tx_call', '')} on {dx.get('band', '')}. Priority is {dx.get('priority', 0)}."
+            elif voice_mode == "Voice Alerts: Any Live POTA" and dx.get('is_pota', False):
+                should_alert = True
+                msg = f"POTA Alert! Active park activator {dx.get('tx_call', '')} spotted on {dx.get('band', '')}."
+            elif voice_mode == "Voice Alerts: Any New Country" and dx.get('is_new_country', False):
+                should_alert = True
+                msg = f"New Country Alert! {dx.get('country', 'Unknown')} spotted: {dx.get('tx_call', '')} on {dx.get('band', '')}."
+            elif voice_mode == "Voice Alerts: Any New US State" and dx.get('is_new_state', False):
+                should_alert = True
+                msg = f"New State Alert! {dx.get('state', 'Unknown')} spotted: {dx.get('tx_call', '')} on {dx.get('band', '')}."
+            elif voice_mode == "Voice Alerts: All Live DX":
+                should_alert = True
+                msg = f"Live DX: {dx.get('tx_call', '')} on {dx.get('band', '')}."
+                
+            if should_alert:
                 dx_key = f"{dx['tx_call']}_{dx['band']}"
                 last_alert = self.last_alert_times.get(dx_key, 0)
                 if now - last_alert >= cooldown_secs:
                     self.last_alert_times[dx_key] = now
-                    msg = f"Live DX Alert! {dx.get('rx_count', 0)} nearby stations are hearing {dx.get('tx_call', '')} on {dx.get('band', '')}. Priority is {dx.get('priority', 0)}."
                     self.alert_service.announce(msg)
         
         # Update map without flashing

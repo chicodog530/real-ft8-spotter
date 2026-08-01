@@ -9,7 +9,7 @@ class MqttWorker(QThread):
     data_ready = Signal(list, dict) # scored_dx, map_data
     status_update = Signal(str)
 
-    def __init__(self, my_callsign, my_grid, exclude_callsign, radius, min_dx=1000):
+    def __init__(self, my_callsign, my_grid, exclude_callsign, radius, min_dx=1000, pota_engine=None):
         super().__init__()
         self.my_callsign = my_callsign
         self.my_grid = my_grid
@@ -17,6 +17,7 @@ class MqttWorker(QThread):
         self.exclude_callsign = exclude_callsign
         self.radius = radius
         self.min_dx = min_dx
+        self.pota_engine = pota_engine
         
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"FT8Spotter_{self.my_callsign}_{int(time.time())}")
         self.client.on_connect = self.on_connect
@@ -138,7 +139,7 @@ class MqttWorker(QThread):
             self.rolling_spots = valid_spots
             
             # We don't deduplicate in the traditional sense, score_dx groups them anyway
-            scored = score_dx(self.rolling_spots, likelihood_engine=self.likelihood_engine, need_engine=self.need_engine)
+            scored = score_dx(self.rolling_spots, likelihood_engine=self.likelihood_engine, need_engine=self.need_engine, pota_engine=self.pota_engine)
             self.data_ready.emit(scored, {'my_loc': self.my_loc, 'spots': self.rolling_spots})
 
     def stop(self):

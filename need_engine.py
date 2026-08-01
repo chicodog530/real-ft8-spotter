@@ -50,6 +50,28 @@ class NeedEngine:
             
         return need_score, explanation
 
+    def evaluate_state_need(self, state: str, band: str) -> bool:
+        if not state:
+            return False
+        with self.db.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM qsos WHERE state = ?", (state,))
+            if cur.fetchone()[0] == 0:
+                return True
+            cur.execute("SELECT COUNT(*) FROM qsos WHERE state = ? AND band = ?", (state, band))
+            return cur.fetchone()[0] == 0
+            
+    def evaluate_country_need(self, country: str, band: str) -> bool:
+        if not country or country == 'Unknown':
+            return False
+        with self.db.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM qsos WHERE country = ?", (country,))
+            if cur.fetchone()[0] == 0:
+                return True
+            cur.execute("SELECT COUNT(*) FROM qsos WHERE country = ? AND band = ?", (country, band))
+            return cur.fetchone()[0] == 0
+
     def calculate_opportunity_priority(self, hear_likelihood: int, work_likelihood: int, need_value: int) -> int:
         """
         Combines propagation likelihood with logbook need into a single ranking value.

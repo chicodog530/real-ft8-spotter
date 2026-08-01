@@ -35,7 +35,10 @@ def filter_spots(spots, min_dx_distance=1500, max_age_seconds=600, current_time=
             filtered.append(s)
     return filtered
 
-def score_dx(filtered_spots, likelihood_engine=None, need_engine=None):
+def score_dx(filtered_spots, likelihood_engine=None, need_engine=None, pota_engine=None):
+    from callsign_resolver import CallsignResolver
+    resolver = CallsignResolver()
+    
     # Group spots by tx_call and band
     scoring = {}
     for s in filtered_spots:
@@ -64,6 +67,17 @@ def score_dx(filtered_spots, likelihood_engine=None, need_engine=None):
             data['need_val'] = need_val
             data['need_exp'] = need_exp
             data['priority'] = priority
+            data['is_pota'] = pota_engine.is_pota(data['tx_call']) if pota_engine else False
+            
+            # Resolve additional flags
+            grid_to_use = data['spots'][0].get('tx_grid', '')
+            info = resolver.resolve(data['tx_call'], grid_to_use)
+            data['state'] = info['state']
+            data['country'] = info['country']
+            
+            data['is_new_state'] = need_engine.evaluate_state_need(info['state'], data['band']) if info['state'] else False
+            data['is_new_country'] = need_engine.evaluate_country_need(info['country'], data['band']) if info['country'] else False
+            
         else:
             # Fallback for tests
             rx_count = len(data['receivers'])
@@ -73,6 +87,7 @@ def score_dx(filtered_spots, likelihood_engine=None, need_engine=None):
             data['need_val'] = 0
             data['need_exp'] = "Fallback"
             data['priority'] = int(rx_count * 10 + avg_snr)
+            data['is_pota'] = False
             
         data['rx_count'] = len(data['receivers'])
         results.append(data)
