@@ -281,12 +281,9 @@ class MainWindow(QMainWindow):
             self.map_label.setStyleSheet("color: red; padding: 20px;")
             main_layout.addWidget(self.map_label)
             
-        # Status footer
         self.status_label = QLabel("Ready.")
         self.status_label.setObjectName("status")
         main_layout.addWidget(self.status_label)
-        
-        self.start_stream()
 
     def save_settings(self):
         self.settings.setValue("callsign", self.callsign_input.text())
