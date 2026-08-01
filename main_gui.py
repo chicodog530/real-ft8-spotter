@@ -117,6 +117,7 @@ class MainWindow(QMainWindow):
         
         self.voice_cb = QCheckBox("Voice Alerts")
         self.voice_cb.setChecked(True)
+        self.voice_cb.toggled.connect(self.on_voice_toggled)
         settings_layout.addWidget(self.voice_cb)
         
         # Connect inputs to update worker filters dynamically
@@ -188,6 +189,11 @@ class MainWindow(QMainWindow):
         
         # Start MQTT Stream
         self.start_stream()
+
+    def on_voice_toggled(self, checked):
+        if not checked:
+            self.alert_service.clear()
+            self.status_label.setText("Voice alerts muted and queue cleared.")
 
     def update_filters(self):
         if self.worker:
