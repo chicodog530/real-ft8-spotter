@@ -2,7 +2,7 @@ import sqlite3
 import os
 import shutil
 import logging
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Dict
 
 logger = logging.getLogger(__name__)
 
