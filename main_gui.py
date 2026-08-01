@@ -143,6 +143,8 @@ class MainWindow(QMainWindow):
         self.max_alerts_combo.setCurrentText("Max Alerts: 5")
         settings_layout.addWidget(self.max_alerts_combo)
         
+        self.last_batch_alert_time = 0
+        
         # Connect inputs to update worker filters dynamically
         self.radius_combo.currentTextChanged.connect(self.update_filters)
         self.exclude_cb.toggled.connect(self.update_filters)
@@ -219,6 +221,7 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Voice alerts muted and queue cleared.")
         else:
             self.last_alert_times.clear()
+            self.last_batch_alert_time = 0
             self.status_label.setText(f"Alert mode changed to {text.replace('Voice Alerts: ', '')}.")
 
     def update_filters(self):
@@ -301,6 +304,7 @@ class MainWindow(QMainWindow):
             max_alerts = int(max_alerts_text.split(": ")[1])
             
         alerts_sent_this_cycle = 0
+        can_alert_batch = (now - self.last_batch_alert_time >= cooldown_secs)
         
         for idx, dx in enumerate(display_spots):
             self.table.insertRow(idx)
@@ -343,7 +347,7 @@ class MainWindow(QMainWindow):
                 should_alert = True
                 msg = f"Live DX: {dx.get('tx_call', '')} on {dx.get('band', '')}."
                 
-            if should_alert:
+            if should_alert and can_alert_batch:
                 dx_key = f"{dx['tx_call']}_{dx['band']}"
                 last_alert = self.last_alert_times.get(dx_key, 0)
                 if now - last_alert >= cooldown_secs:
@@ -351,6 +355,7 @@ class MainWindow(QMainWindow):
                         self.last_alert_times[dx_key] = now
                         self.alert_service.announce(msg)
                         alerts_sent_this_cycle += 1
+                        self.last_batch_alert_time = now
         
         # Update map without flashing
         if WEB_ENGINE_AVAILABLE:
