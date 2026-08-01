@@ -291,7 +291,7 @@ class MainWindow(QMainWindow):
             return
             
         exclude = self.callsign_input.text().upper() if self.exclude_cb.isChecked() else ""
-        radius = int(self.radius_combo.currentText())
+        radius = self.radius_slider.value()
         my_call = self.callsign_input.text().upper() or "KE0CGB"
         my_grid = self.grid_input.text().upper() or "EM27XO"
         
