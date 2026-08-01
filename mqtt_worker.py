@@ -18,6 +18,8 @@ class MqttWorker(QThread):
         self.radius = radius
         self.min_dx = min_dx
         self.pota_engine = pota_engine
+        self.include_countries = []
+        self.exclude_countries = []
         
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"FT8Spotter_{self.my_callsign}_{int(time.time())}")
         self.client.on_connect = self.on_connect
@@ -140,7 +142,26 @@ class MqttWorker(QThread):
             
             # We don't deduplicate in the traditional sense, score_dx groups them anyway
             scored = score_dx(self.rolling_spots, likelihood_engine=self.likelihood_engine, need_engine=self.need_engine, pota_engine=self.pota_engine)
-            self.data_ready.emit(scored, {'my_loc': self.my_loc, 'spots': self.rolling_spots})
+            
+            final_scored = []
+            for dx in scored:
+                country = dx.get('country', '').lower()
+                
+                # Check Excludes (e.g. 'united states' in country)
+                if self.exclude_countries:
+                    is_excluded = any(ex in country for ex in self.exclude_countries)
+                    if is_excluded:
+                        continue
+                
+                # Check Includes
+                if self.include_countries:
+                    is_included = any(inc in country for inc in self.include_countries)
+                    if not is_included:
+                        continue
+                        
+                final_scored.append(dx)
+                
+            self.data_ready.emit(final_scored, {'my_loc': self.my_loc, 'spots': self.rolling_spots})
 
     def stop(self):
         self.running = False

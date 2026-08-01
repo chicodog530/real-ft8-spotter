@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-                               QTableWidgetItem, QHeaderView, QSystemTrayIcon, QMenu, QFileDialog, QLineEdit, QComboBox, QCheckBox)
+                               QTableWidgetItem, QHeaderView, QSystemTrayIcon, QMenu, QFileDialog, QLineEdit, QComboBox, QCheckBox, QDialog)
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
@@ -16,6 +16,30 @@ try:
 except ImportError:
     WEB_ENGINE_AVAILABLE = False
 
+class AdvancedFilterDialog(QDialog):
+    def __init__(self, parent=None, current_includes="", current_excludes=""):
+        super().__init__(parent)
+        self.setWindowTitle("Advanced Country Filters")
+        self.resize(350, 150)
+        layout = QVBoxLayout(self)
+        
+        layout.addWidget(QLabel("Only Include Countries (comma separated):"))
+        self.include_input = QLineEdit(current_includes)
+        self.include_input.setPlaceholderText("e.g. Bulgaria, Spain, France")
+        layout.addWidget(self.include_input)
+        
+        layout.addWidget(QLabel("Exclude Countries (comma separated):"))
+        self.exclude_input = QLineEdit(current_excludes)
+        self.exclude_input.setPlaceholderText("e.g. United States, Canada")
+        layout.addWidget(self.exclude_input)
+        
+        save_btn = QPushButton("Save Filters")
+        save_btn.clicked.connect(self.accept)
+        layout.addWidget(save_btn)
+        
+    def get_filters(self):
+        return self.include_input.text(), self.exclude_input.text()
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -25,6 +49,8 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.last_alert_times = {} # Track when we last alerted for a DX
         self.current_spots = [] # Store live spots for popup lookups
+        self.advanced_includes = ""
+        self.advanced_excludes = ""
         self.setup_ui()
         self.apply_theme()
         self.setup_system_tray()
@@ -155,6 +181,10 @@ class MainWindow(QMainWindow):
         self.import_btn.clicked.connect(self.import_adif)
         settings_layout.addWidget(self.import_btn)
         
+        self.adv_filter_btn = QPushButton("Advanced Filters")
+        self.adv_filter_btn.clicked.connect(self.open_advanced_filters)
+        settings_layout.addWidget(self.adv_filter_btn)
+        
         settings_layout.addStretch()
         main_layout.addLayout(settings_layout)
         
@@ -230,6 +260,10 @@ class MainWindow(QMainWindow):
             self.worker.radius = int(self.radius_combo.currentText())
             self.worker.my_callsign = self.callsign_input.text().upper()
             
+            # Update Country Filters
+            self.worker.include_countries = [c.strip().lower() for c in self.advanced_includes.split(",") if c.strip()]
+            self.worker.exclude_countries = [c.strip().lower() for c in self.advanced_excludes.split(",") if c.strip()]
+            
             new_grid = self.grid_input.text().upper()
             if len(new_grid) >= 4 and new_grid != self.worker.my_grid:
                 self.worker.my_grid = new_grid
@@ -272,6 +306,13 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Import Error", f"Failed to import ADIF:\n{e}")
                 self.status_label.setText("Import Failed.")
+
+    def open_advanced_filters(self):
+        dialog = AdvancedFilterDialog(self, self.advanced_includes, self.advanced_excludes)
+        if dialog.exec():
+            self.advanced_includes, self.advanced_excludes = dialog.get_filters()
+            self.update_filters()
+            self.status_label.setText(f"Advanced Country Filters updated.")
 
     def on_render_process_terminated(self, termination_status, exit_code):
         print(f"WebEngine render process crashed ({termination_status}). Reloading map...")
