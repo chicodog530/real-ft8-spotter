@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QLabel, QPushButton, QTableWidget, 
                                QTableWidgetItem, QHeaderView, QSystemTrayIcon, QMenu, QFileDialog, QLineEdit, QComboBox, QCheckBox, QDialog, QSlider, QListWidget, QListWidgetItem)
 from PySide6.QtGui import QIcon, QAction
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtWidgets import QMessageBox
 from mqtt_worker import MqttWorker
 from background_service import BackgroundAlertService
@@ -91,7 +91,9 @@ class MainWindow(QMainWindow):
         self.current_spots = [] # Store live spots for popup lookups
         self.advanced_excludes = []
         self.only_unworked_countries = False
+        self.settings = QSettings("YWD", "FT8Spotter")
         self.setup_ui()
+        self.load_settings()
         self.apply_theme()
         self.setup_system_tray()
         
@@ -116,6 +118,7 @@ class MainWindow(QMainWindow):
         self.tray_icon.show()
         
     def closeEvent(self, event):
+        self.save_settings()
         # Minimize to tray instead of exiting
         event.ignore()
         self.hide()
@@ -283,6 +286,52 @@ class MainWindow(QMainWindow):
         self.status_label.setObjectName("status")
         main_layout.addWidget(self.status_label)
         
+        self.start_stream()
+
+    def save_settings(self):
+        self.settings.setValue("callsign", self.callsign_input.text())
+        self.settings.setValue("grid", self.grid_input.text())
+        self.settings.setValue("exclude_my_call", self.exclude_cb.isChecked())
+        self.settings.setValue("radius", self.radius_slider.value())
+        self.settings.setValue("cooldown", self.cooldown_combo.currentText())
+        self.settings.setValue("voice_mode", self.voice_combo.currentText())
+        self.settings.setValue("max_alerts", self.max_alerts_combo.currentText())
+        self.settings.setValue("advanced_excludes", "|".join(self.advanced_excludes))
+        self.settings.setValue("only_unworked", self.only_unworked_countries)
+
+    def load_settings(self):
+        self.callsign_input.setText(self.settings.value("callsign", "KE0CGB"))
+        self.grid_input.setText(self.settings.value("grid", "EM27XO"))
+        
+        # PySide6 bool from QSettings requires specific handling or we just cast string
+        exclude_val = str(self.settings.value("exclude_my_call", "true")).lower() == "true"
+        self.exclude_cb.setChecked(exclude_val)
+        
+        radius_val = int(self.settings.value("radius", 100))
+        self.radius_slider.setValue(radius_val)
+        self.on_radius_changed(radius_val)
+        
+        cooldown_val = self.settings.value("cooldown", "5m 00s")
+        if self.cooldown_combo.findText(cooldown_val) != -1:
+            self.cooldown_combo.setCurrentText(cooldown_val)
+            
+        voice_val = self.settings.value("voice_mode", "Voice Alerts: Smart Priority")
+        if self.voice_combo.findText(voice_val) != -1:
+            self.voice_combo.setCurrentText(voice_val)
+            
+        max_alerts_val = self.settings.value("max_alerts", "Max Alerts: 5")
+        if self.max_alerts_combo.findText(max_alerts_val) != -1:
+            self.max_alerts_combo.setCurrentText(max_alerts_val)
+            
+        excludes_str = self.settings.value("advanced_excludes", "")
+        self.advanced_excludes = [x for x in excludes_str.split("|") if x]
+        
+        unworked_val = str(self.settings.value("only_unworked", "false")).lower() == "true"
+        self.only_unworked_countries = unworked_val
+        
+        self.update_filters()
+
+    def apply_theme(self):
         # We start the map centered roughly in the US with dark mode.
         # We also create a LayerGroup for markers so we can easily clear them.
         self.map_html = """
