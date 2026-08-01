@@ -302,8 +302,8 @@ class MainWindow(QMainWindow):
             self.map_view.page().runJavaScript(script)
 
     def on_cell_clicked(self, row, col):
-        # Only trigger on "DX Callsign" (col 2) or "Reported By" (col 5)
-        if col in (2, 5):
+        # Trigger on "DX Callsign" (col 2)
+        if col == 2:
             cell_text = self.table.item(row, col).text()
             callsigns = [c.strip() for c in cell_text.split(',') if c.strip()]
             
@@ -315,13 +315,9 @@ class MainWindow(QMainWindow):
                 country = "Unknown" # In a full app, map callsign prefix to DXCC
                 
                 for s in self.current_spots:
-                    if col == 2 and s['tx_call'] == call:
+                    if s['tx_call'] == call:
                         grid = s['tx_grid']
                         dist = f"{s['dist_to_tx']:,.0f} mi"
-                        break
-                    elif col == 5 and s['rx_call'] == call:
-                        grid = s['rx_grid']
-                        dist = f"{s['dist_to_rx']:,.0f} mi"
                         break
                         
                 info_html += f"<b>Callsign:</b> {call}<br>"
