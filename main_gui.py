@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLabel, QPushButton, QTableWidget, 
-                               QTableWidgetItem, QHeaderView, QSystemTrayIcon, QMenu, QFileDialog, QLineEdit, QComboBox, QCheckBox, QDialog, QSlider)
+                               QTableWidgetItem, QHeaderView, QSystemTrayIcon, QMenu, QFileDialog, QLineEdit, QComboBox, QCheckBox, QDialog, QSlider, QListWidget, QListWidgetItem)
 from PySide6.QtGui import QIcon, QAction
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMessageBox
@@ -17,28 +17,64 @@ except ImportError:
     WEB_ENGINE_AVAILABLE = False
 
 class AdvancedFilterDialog(QDialog):
-    def __init__(self, parent=None, current_includes="", current_excludes=""):
+    def __init__(self, parent=None, current_excludes=[]):
         super().__init__(parent)
-        self.setWindowTitle("Advanced Country Filters")
-        self.resize(350, 150)
+        self.setWindowTitle("Country Filters")
+        self.resize(400, 500)
         layout = QVBoxLayout(self)
         
-        layout.addWidget(QLabel("Only Include Countries (comma separated):"))
-        self.include_input = QLineEdit(current_includes)
-        self.include_input.setPlaceholderText("e.g. Bulgaria, Spain, France")
-        layout.addWidget(self.include_input)
+        layout.addWidget(QLabel("Uncheck a country to exclude it from the feed:"))
         
-        layout.addWidget(QLabel("Exclude Countries (comma separated):"))
-        self.exclude_input = QLineEdit(current_excludes)
-        self.exclude_input.setPlaceholderText("e.g. United States, Canada")
-        layout.addWidget(self.exclude_input)
+        self.list_widget = QListWidget()
+        layout.addWidget(self.list_widget)
+        
+        # Populate with all countries from pyhamtools
+        try:
+            from pyhamtools import LookupLib
+            lib = LookupLib(lookuptype='countryfile')
+            countries = sorted(list(set([v['country'] for v in lib._prefixes.values() if 'country' in v])))
+        except:
+            countries = ["United States", "Canada", "Bulgaria", "Spain"] # Fallback
+            
+        for country in countries:
+            item = QListWidgetItem(country)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            if country.lower() in current_excludes:
+                item.setCheckState(Qt.Unchecked)
+            else:
+                item.setCheckState(Qt.Checked)
+            self.list_widget.addItem(item)
+            
+        btn_layout = QHBoxLayout()
+        sel_all_btn = QPushButton("Check All")
+        sel_all_btn.clicked.connect(self.check_all)
+        btn_layout.addWidget(sel_all_btn)
+        
+        unsel_all_btn = QPushButton("Uncheck All")
+        unsel_all_btn.clicked.connect(self.uncheck_all)
+        btn_layout.addWidget(unsel_all_btn)
+        
+        layout.addLayout(btn_layout)
         
         save_btn = QPushButton("Save Filters")
         save_btn.clicked.connect(self.accept)
         layout.addWidget(save_btn)
         
-    def get_filters(self):
-        return self.include_input.text(), self.exclude_input.text()
+    def check_all(self):
+        for i in range(self.list_widget.count()):
+            self.list_widget.item(i).setCheckState(Qt.Checked)
+            
+    def uncheck_all(self):
+        for i in range(self.list_widget.count()):
+            self.list_widget.item(i).setCheckState(Qt.Unchecked)
+        
+    def get_excludes(self):
+        excludes = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item.checkState() == Qt.Unchecked:
+                excludes.append(item.text().lower())
+        return excludes
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -49,8 +85,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.last_alert_times = {} # Track when we last alerted for a DX
         self.current_spots = [] # Store live spots for popup lookups
-        self.advanced_includes = ""
-        self.advanced_excludes = ""
+        self.advanced_excludes = []
         self.setup_ui()
         self.apply_theme()
         self.setup_system_tray()
@@ -290,9 +325,9 @@ class MainWindow(QMainWindow):
             self.worker.radius = self.radius_slider.value()
             self.worker.my_callsign = self.callsign_input.text().upper()
             
-            # Update Country Filters
-            self.worker.include_countries = [c.strip().lower() for c in self.advanced_includes.split(",") if c.strip()]
-            self.worker.exclude_countries = [c.strip().lower() for c in self.advanced_excludes.split(",") if c.strip()]
+            # Update Country Filters (Includes array is no longer used since we rely on the full list of unchecked items)
+            self.worker.include_countries = []
+            self.worker.exclude_countries = self.advanced_excludes
             
             new_grid = self.grid_input.text().upper()
             if len(new_grid) >= 4 and new_grid != self.worker.my_grid:
@@ -338,9 +373,9 @@ class MainWindow(QMainWindow):
                 self.status_label.setText("Import Failed.")
 
     def open_advanced_filters(self):
-        dialog = AdvancedFilterDialog(self, self.advanced_includes, self.advanced_excludes)
+        dialog = AdvancedFilterDialog(self, self.advanced_excludes)
         if dialog.exec():
-            self.advanced_includes, self.advanced_excludes = dialog.get_filters()
+            self.advanced_excludes = dialog.get_excludes()
             self.update_filters()
             self.status_label.setText(f"Advanced Country Filters updated.")
 
