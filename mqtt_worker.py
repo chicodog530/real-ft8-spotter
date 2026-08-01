@@ -20,6 +20,7 @@ class MqttWorker(QThread):
         self.pota_engine = pota_engine
         self.include_countries = []
         self.exclude_countries = []
+        self.only_unworked_countries = False
         
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"FT8Spotter_{self.my_callsign}_{int(time.time())}")
         self.client.on_connect = self.on_connect
@@ -146,6 +147,10 @@ class MqttWorker(QThread):
             final_scored = []
             for dx in scored:
                 country = dx.get('country', '').lower()
+                
+                # Check Unworked Rule
+                if getattr(self, 'only_unworked_countries', False) and not dx.get('is_new_country', False):
+                    continue
                 
                 # Check Excludes (e.g. 'united states' in country)
                 if self.exclude_countries:

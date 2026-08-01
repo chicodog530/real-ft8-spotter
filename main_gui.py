@@ -17,13 +17,17 @@ except ImportError:
     WEB_ENGINE_AVAILABLE = False
 
 class AdvancedFilterDialog(QDialog):
-    def __init__(self, parent=None, current_excludes=[]):
+    def __init__(self, parent=None, current_excludes=[], only_unworked=False):
         super().__init__(parent)
         self.setWindowTitle("Country Filters")
         self.resize(400, 500)
         layout = QVBoxLayout(self)
         
-        layout.addWidget(QLabel("Uncheck a country to exclude it from the feed:"))
+        self.unworked_cb = QCheckBox("Hide all countries I have already worked (Requires ADIF)")
+        self.unworked_cb.setChecked(only_unworked)
+        layout.addWidget(self.unworked_cb)
+        
+        layout.addWidget(QLabel("Uncheck a country to manually exclude it:"))
         
         self.list_widget = QListWidget()
         layout.addWidget(self.list_widget)
@@ -74,7 +78,7 @@ class AdvancedFilterDialog(QDialog):
             item = self.list_widget.item(i)
             if item.checkState() == Qt.Unchecked:
                 excludes.append(item.text().lower())
-        return excludes
+        return excludes, self.unworked_cb.isChecked()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -86,6 +90,7 @@ class MainWindow(QMainWindow):
         self.last_alert_times = {} # Track when we last alerted for a DX
         self.current_spots = [] # Store live spots for popup lookups
         self.advanced_excludes = []
+        self.only_unworked_countries = False
         self.setup_ui()
         self.apply_theme()
         self.setup_system_tray()
@@ -328,6 +333,7 @@ class MainWindow(QMainWindow):
             # Update Country Filters (Includes array is no longer used since we rely on the full list of unchecked items)
             self.worker.include_countries = []
             self.worker.exclude_countries = self.advanced_excludes
+            self.worker.only_unworked_countries = self.only_unworked_countries
             
             new_grid = self.grid_input.text().upper()
             if len(new_grid) >= 4 and new_grid != self.worker.my_grid:
@@ -373,9 +379,9 @@ class MainWindow(QMainWindow):
                 self.status_label.setText("Import Failed.")
 
     def open_advanced_filters(self):
-        dialog = AdvancedFilterDialog(self, self.advanced_excludes)
+        dialog = AdvancedFilterDialog(self, self.advanced_excludes, self.only_unworked_countries)
         if dialog.exec():
-            self.advanced_excludes = dialog.get_excludes()
+            self.advanced_excludes, self.only_unworked_countries = dialog.get_excludes()
             self.update_filters()
             self.status_label.setText(f"Advanced Country Filters updated.")
 
