@@ -189,12 +189,17 @@ class MainWindow(QMainWindow):
         cooldown_label = QLabel("Alert Cooldown:")
         settings_row2.addWidget(cooldown_label)
         self.cooldown_combo = QComboBox()
-        # 15s up to 5m in 30s increments
-        self.cooldown_options = {
-            "15 sec": 15, "45 sec": 45, "1m 15s": 75, "1m 45s": 105, 
-            "2m 15s": 135, "2m 45s": 165, "3m 15s": 195, "3m 45s": 225, 
-            "4m 15s": 255, "4m 45s": 285, "5m 00s": 300
-        }
+        self.cooldown_options = {}
+        for s in range(15, 301, 15):
+            mins = s // 60
+            secs = s % 60
+            if mins == 0:
+                label = f"{secs} sec"
+            elif secs == 0:
+                label = f"{mins}m 00s"
+            else:
+                label = f"{mins}m {secs:02d}s"
+            self.cooldown_options[label] = s
         self.cooldown_combo.addItems(list(self.cooldown_options.keys()))
         self.cooldown_combo.setCurrentText("5m 00s")
         settings_row2.addWidget(self.cooldown_combo)
