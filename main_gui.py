@@ -121,8 +121,11 @@ class MainWindow(QMainWindow):
         self.exclude_cb.setChecked(True)
         settings_layout.addWidget(self.exclude_cb)
         
-        self.radius_label = QLabel("   Nearby Radius: 100 miles")
-        settings_layout.addWidget(self.radius_label)
+        radius_layout = QVBoxLayout()
+        
+        self.radius_label = QLabel("Nearby Radius: 100 miles")
+        self.radius_label.setAlignment(Qt.AlignCenter)
+        radius_layout.addWidget(self.radius_label)
         
         self.radius_slider = QSlider(Qt.Horizontal)
         self.radius_slider.setMinimum(25)
@@ -130,8 +133,11 @@ class MainWindow(QMainWindow):
         self.radius_slider.setSingleStep(5)
         self.radius_slider.setTickInterval(25)
         self.radius_slider.setValue(100)
-        self.radius_slider.setMaximumWidth(150)
-        settings_layout.addWidget(self.radius_slider)
+        self.radius_slider.setMinimumWidth(150)
+        self.radius_slider.setMaximumWidth(250)
+        radius_layout.addWidget(self.radius_slider)
+        
+        settings_layout.addLayout(radius_layout)
         
         cooldown_label = QLabel("   Alert Cooldown:")
         settings_layout.addWidget(cooldown_label)
@@ -265,7 +271,7 @@ class MainWindow(QMainWindow):
             self.radius_slider.setValue(snapped_value)
             return
             
-        self.radius_label.setText(f"   Nearby Radius: {snapped_value} miles")
+        self.radius_label.setText(f"Nearby Radius: {snapped_value} miles")
         self.update_filters()
 
     def update_filters(self):
